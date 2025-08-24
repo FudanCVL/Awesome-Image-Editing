@@ -1,16 +1,10 @@
-name: Enforce English for comments
+name: Enforce English for issues
 on:
-  issue_comment:
-    types: [created, edited]
-  pull_request_review_comment:
-    types: [created, edited]
-  discussion_comment:
-    types: [created, edited]
+  issues:
+    types: [opened, edited]
 
 permissions:
   issues: write
-  pull-requests: write
-  discussions: write
   contents: read
 
 jobs:
@@ -20,71 +14,76 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            const MAINTAINERS = [
-              // 同步维护者名单
-            ];
-            const ORG = 'FudanCVL';
-            const CJK = /[\u2E80-\u2EFF\u3000-\u303F\u31C0-\u31EF\u3200-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/;
+            const CJK = /[\p{Script=Han}\u3000-\u303F\uFF00-\uFFEF]/u;
 
-            const actor = context.actor;
-            if (MAINTAINERS.includes(actor)) return;
+            const issue = context.payload.issue || {};
+            const title = issue.title || "";
+            const body  = (issue.body || "").trim();
 
-            async function isOrgMember(org, username) {
-              if (!org) return false;
-              try {
-                const res = await github.rest.orgs.checkMembershipForUser({ org, username });
-                return res.status === 204;
-              } catch { return false; }
+            const text = `${title}\n${body}`;
+            const hasCJK = CJK.test(text);
+
+            core.info(`en-only-issues: titleLen=${title.length}, bodyLen=${body.length}, hasCJK=${hasCJK}`);
+            core.info(`en-only-issues: title="${title.replace(/\n/g,' ')}"`);
+            core.info(`en-only-issues: bodyPreview="${body.slice(0,80).replace(/\n/g,' ')}${body.length>80?'…':''}"`);
+
+            if (!hasCJK) {
+              core.info('No CJK detected. Skipping.');
+              return;
             }
-            async function isRepoCollaborator(username) {
-              const { owner, repo } = context.repo;
-              try {
-                const res = await github.rest.repos.checkCollaborator({ owner, repo, username });
-                return res.status === 204;
-              } catch { return false; }
-            }
-            const bypass = (await isOrgMember(ORG, actor)) || (await isRepoCollaborator(actor));
-            if (bypass) return;
-
-            const p = context.payload;
-            const body = p.comment?.body || p.review?.body || p.discussion_comment?.body || '';
-            if (!CJK.test(body || '')) return;
 
             const { owner, repo } = context.repo;
+            const number = issue.number;
 
-            // 尽力在对应线程提示 + 打标签
-            const issueNumber = p.issue?.number || p.pull_request?.number || null;
-            if (issueNumber) {
-              // 确保标签
-              async function ensureLabel(name, color, description) {
+            async function ensureLabel(name, color, description) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+                core.info(`Label "${name}" exists.`);
+              } catch {
+                core.info(`Label "${name}" not found. Creating...`);
                 try {
-                  await github.rest.issues.getLabel({ owner, repo, name });
-                } catch {
-                  try {
-                    await github.rest.issues.createLabel({ owner, repo, name, color, description });
-                  } catch {}
+                  await github.rest.issues.createLabel({ owner, repo, name, color, description });
+                  core.info(`Label "${name}" created.`);
+                } catch (e) {
+                  core.warning(`Create label failed (may exist): ${e.message}`);
                 }
               }
-              await ensureLabel('non-english', 'B60205', 'Contains non-English text');
+            }
+            await ensureLabel('non-english', 'B60205', 'Contains non-English text');
 
-              await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: ['non-english'] });
-              await github.rest.issues.createComment({
-                owner, repo, issue_number: issueNumber,
-                body: 'English only please. 此处评论含非英文内容，已标记/最小化处理。请改用英文。'
+            try {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: number, labels: ['non-english']
               });
+              core.info('Label applied.');
+            } catch (e) {
+              core.warning(`Add label failed: ${e.message}`);
             }
 
-            // 尝试最小化该评论（仅 Issue/PR 普通评论支持最小化）
             try {
-              const commentNodeId = p.comment?.node_id;
-              if (commentNodeId) {
-                const mutation = `
-                  mutation($subjectId:ID!) {
-                    minimizeComment(input:{subjectId:$subjectId, classifier:OFF_TOPIC}) {
-                      minimizedComment { isMinimized }
-                    }
-                  }
-                `;
-                await github.graphql(mutation, { subjectId: commentNodeId });
-              }
-            } catch {}
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: number,
+                body: 'English only please.'
+              });
+              core.info('Comment posted.');
+            } catch (e) {
+              core.warning(`Comment failed: ${e.message}`);
+            }
+
+            try {
+              await github.rest.issues.update({
+                owner, repo, issue_number: number, state: 'closed'
+              });
+              core.info('Issue closed.');
+            } catch (e) {
+              core.warning(`Close failed: ${e.message}`);
+            }
+
+            try {
+              await github.rest.issues.lock({
+                owner, repo, issue_number: number, lock_reason: 'off-topic'
+              });
+              core.info('Issue locked.');
+            } catch (e) {
+              core.warning(`Lock failed: ${e.message}`);
+            }
