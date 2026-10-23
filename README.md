@@ -171,6 +171,7 @@ Experiment and Data
 |ICCV 2023  |  [MasaCtrl: Tuning-Free Mutual Self-Attention Control for Consistent Image Synthesis and Editing](https://arxiv.org/abs/2304.08465) |    text     | $F_{inv}^F+F_{edit}^{Attn}$ |[Code](https://github.com/TencentARC/MasaCtrl)|
 | AAAI 2023 | [Tuning-Free Inversion-Enhanced Control for Consistent Image Editing](https://arxiv.org/abs/2312.14611) |    text     | $F_{inv}^F+F_{edit}^{Attn}$ |[Code]()|
 | SIGGRAPH 2024 |  [Cross-Image Attention for Zero-Shot Appearance Transfer](https://arxiv.org/abs/2311.03335)  |   image     |$F_{inv}^F+F_{edit}^{Attn}$ |[Code](https://github.com/garibida/cross-image-attention)|
+| SIGGRAPH 2025 | [Cora: Correspondence-aware Image Editing Using Few-Step Diffusion](https://arxiv.org/abs/2505.23907) |    text     | $F_{inv}^F+F_{edit}^{Attn}$ |[Code](https://github.com/alimohammadiamirhossein/cora)|
 
 
 
